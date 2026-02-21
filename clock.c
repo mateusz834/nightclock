@@ -8,10 +8,10 @@
 #define CLKOUT    5
 
 // 31B is just a random value, should never be hit.
-#define MAX_DATA_BYTES 31
+#define MAX_FRAME_BYTES 31
 
 typedef struct {
-    uint8_t data[MAX_DATA_BYTES];
+    uint8_t data[MAX_FRAME_BYTES];
     uint8_t length;
 } Frame;
 
@@ -19,15 +19,6 @@ void wait_low_clk() {
     while (true) {
 		int value = gpio_get(CLKIN);
 		if (value == 0) {
-			return;
-		}
-	}
-}
-
-void wait_high_clk() {
-    while (true) {
-		int value = gpio_get(CLKIN);
-		if (value > 0) {
 			return;
 		}
 	}
@@ -55,7 +46,7 @@ void wait_high_clk() {
 //  |     |
 // -      --
 //
-// Frame end
+// Frame end (Note: the CLK and DIO will be at high level untill next data transmission).
 //    CLK
 //   ______
 //  |     |
@@ -124,7 +115,7 @@ Frame read_frame() {
 
 		if (res == FRAME_END) {
 			if (bit_count == 0 || bit_idx != 0) {
-				// Something bad happened, skip this frame.
+				// Something bad happened or synchronization, skip this frame.
 				f.length = 0;
 				bit_count = 0;
 				wait_low_clk();
@@ -134,11 +125,19 @@ Frame read_frame() {
 			return f;
 		}
 
+		if (byte_idx >= MAX_FRAME_BYTES) {
+			// Something bad happened, skip this frame.
+			f.length = 0;
+			bit_count = 0;
+			wait_low_clk();
+			continue;
+		}
+
 		int bit = res == BIT1;
 		f.data[byte_idx] |= (bit << bit_idx);
 		bit_count++;
 
-		// scan returned on falling clock edge.
+		// scan returned on a falling clock edge.
     }
 }
 
@@ -150,6 +149,7 @@ void data_receive_core() {
 		Frame f = read_frame();
 
 
+		// Intercept brightness command.
 		if ((f.data[0] & 0b11000000) == 0b10000000) {
 			int n = i%50;
 			if (n < 10) {
