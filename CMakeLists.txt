@@ -19,7 +19,7 @@ pico_enable_stdio_usb(clock 1)
 pico_enable_stdio_uart(clock 0)
 
 # Add pico_stdlib library which aggregates commonly used features
-target_link_libraries(clock pico_stdlib pico_multicore)
+target_link_libraries(clock pico_stdlib pico_multicore hardware_adc)
 
 # create map/bin/hex/uf2 file in addition to ELF.
 pico_add_extra_outputs(clock)

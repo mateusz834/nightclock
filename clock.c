@@ -1,11 +1,14 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "pico/util/queue.h"
+#include "hardware/adc.h"
+
 
 #define DIOIN     2
 #define CLKIN     3
 #define DIOOUT    4
 #define CLKOUT    5
+#define ADC       28
 
 // 31B is just a random value, should never be hit.
 #define MAX_FRAME_BYTES 31
@@ -144,29 +147,9 @@ Frame read_frame() {
 queue_t q;
 
 void data_receive_core() {
-	int i = 0;
     while (true) {
 		Frame f = read_frame();
-
-
-		// Intercept brightness command.
-		if ((f.data[0] & 0b11000000) == 0b10000000) {
-			int n = i%50;
-			if (n < 10) {
-				f.data[0] = 0b10001000;
-			} else if (n < 20) {
-				f.data[0] = 0b10001001;
-			} else if (n < 30) {
-				f.data[0] = 0b10001010;
-			} else if (n < 40) {
-				f.data[0] = 0b10001011;
-			} else if (n < 50) {
-				f.data[0] = 0b10001111;
-			}
-		}
-
 		queue_add_blocking(&q, &f);
-		i++;
     }
 }
 
@@ -179,6 +162,10 @@ int main() {
     gpio_set_dir(CLKIN, GPIO_IN);
     gpio_set_dir(DIOOUT,GPIO_OUT);
     gpio_set_dir(CLKOUT,GPIO_OUT);
+
+	adc_init();
+	adc_set_temp_sensor_enabled(true);
+	adc_gpio_init(ADC);
 
     // gpio_init(PICO_DEFAULT_LED_PIN);
     // gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
@@ -193,6 +180,19 @@ int main() {
 
 		Frame f;
 		queue_remove_blocking(&q, &f);
+
+		// Intercept brightness command.
+		if ((f.data[0] & 0b11000000) == 0b10000000) {
+			adc_select_input(2); // 28
+    		float volt = adc_read() * (3.3/4095);
+			if (volt > 3.25) {
+				f.data[0] = 0b10000000; // off
+			} else if (volt > 2.80) {
+				f.data[0] = 0b10001000; // lowest brightness
+			} else {
+				f.data[0] = 0b10001111; // 100% brightness
+			}
+		}
 
 		sleep_us(5);
 
